@@ -140,7 +140,7 @@ public class JavaHdfsLR {
 			System.out.println("On iteration " + i);
 			Xvector gradient = points.map(new ComputeGradient(w)).reduce(new VectorSum());
 			int num=gradient.x_index.size();
-			for (int j = 0; j < num; i++) {
+			for (int j = 0; j < num; j++) {
 				int index=gradient.x_index.elementAt(j);
 				w[index-1] -= gradient.x_value.elementAt(j);
 			}
