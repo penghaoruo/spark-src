@@ -7,13 +7,7 @@ import java.io.*;
 import java.util.*;
 
 public class JavaHdfsLR {
-	static JavaSparkContext sc=null;
-	static String fname=null;
-	static int N = 0;
-	static int D = 0;
-	static int ITERATIONS = 0;
-	static double[] w = null;
-	static double b = 0;
+	static int D = 16428;
 	static Random rand = new Random(42);
 	
 	static class Xvector implements Serializable {
@@ -135,32 +129,23 @@ public class JavaHdfsLR {
 		bw.close();
 		writer.close();
 	}
-	
-	public static void pInitial(String[] args) {
-		if (args.length < 5) {
-			System.err.println("Usage: JavaHdfsLR <master> <file> <N> <D> <iters>");
-			System.exit(1);
-		}
-		sc = new JavaSparkContext(args[0], "JavaHdfsLR", System.getenv("SPARK_HOME"), System.getenv("SPARK_EXAMPLES_JAR"));
-		fname = args[1];
-		N = Integer.parseInt(args[2]);
-		D = Integer.parseInt(args[3]);
-		ITERATIONS = Integer.parseInt(args[4]);
-		w = new double[D];
-		b = 0;
-		for (int i = 0; i < D; i++)
-			w[i] = 0;
-	}
 
 	public static void main(String[] args) {
-		// Parameter initialization
-		pInitial(args);
-		
-		// load data for only one time and add to cache
-		JavaRDD<String> lines = sc.textFile(fname);
+		if (args.length < 3) {
+			System.err.println("Usage: JavaHdfsLR <master> <file> <iters>");
+			System.exit(1);
+		}
+
+		JavaSparkContext sc = new JavaSparkContext(args[0], "JavaHdfsLR", System.getenv("SPARK_HOME"), System.getenv("SPARK_EXAMPLES_JAR"));
+		JavaRDD<String> lines = sc.textFile(args[1]);
 		JavaRDD<DataPoint> points = lines.map(new ParsePoint()).cache();
-		
-		// Iterations
+		int ITERATIONS = Integer.parseInt(args[2]);
+
+		double[] w = new double[D];
+		for (int i = 0; i < D; i++)
+			w[i] = 2 * rand.nextDouble() - 1;
+		double b=0;
+
 		for (int i = 1; i <= ITERATIONS; i++) {
 			System.out.println("On iteration " + i);
 			Datapoint gradient = points.map(new ComputeGradient(w)).reduce(new VectorSum());
@@ -175,65 +160,5 @@ public class JavaHdfsLR {
 		System.out.print("Final w: ");
 		printWeights(w,b);
 		System.exit(0);
-		
-			
-			// Set up for the first Map-Reduce job 
-			Job job_primal=new Job(conf_primal, "SublinearPrimal");
-			job_primal.setJarByClass(SublinearLogisticLtwo.class);
-			FileInputFormat.addInputPath(job_primal,new Path(args[0]));
-			FileOutputFormat.setOutputPath(job_primal,tempDir1);             
-			job_primal.setMapperClass(PrimalMap.class);
-			job_primal.setCombinerClass(PrimalReduce.class);
-			job_primal.setReducerClass(PrimalReduce.class);
-			job_primal.setNumReduceTasks(30);
-			job_primal.setOutputKeyClass(Text.class);
-			job_primal.setOutputValueClass(Text.class);
-			
-			// Parallel Block
-			job_primal.waitForCompletion(true);
-			
-			// Update learning variables in primal step
-			wUpdate(k);
-			
-			// Get configuration of the second Map-Reduce job
-			Configuration conf_dual=new Configuration();
-			
-			// Set output path in hdfs for the second Map-Reduce job 
-			Path tempDir2 = new Path("sublinear/tmp/dual"+(new Integer(k)).toString());
-			
-			// Pass parameters for the second Map-Reduce job through configuration 
-			conf_dual.setInt("d", d);
-			conf_dual.setInt("n", n);
-			conf_dual.setInt("jt", jt);
-			conf_dual.setFloat("b", (float)b);
-			conf_dual.setFloat("eta", (float)eta);
-			
-			// Store w[] in hdfs file 
-			pass_throgh_hdfs(1);
-			
-			// Set previous hdfs files in cache
-			DistributedCache.addCacheFile(new URI("sublinear/tmp/paraw"), conf_dual);
-			DistributedCache.addCacheFile(new URI("sublinear/tmp/parakexi"), conf_dual);
-			
-			// Set up for the second Map-Reduce job 
-			Job job_dual=new Job(conf_dual, "SublinearDual");
-			job_dual.setJarByClass(SublinearLogisticLtwo.class);
-			FileInputFormat.addInputPath(job_dual,new Path(args[0]));
-			FileOutputFormat.setOutputPath(job_dual,tempDir2);             
-			job_dual.setMapperClass(DualMap.class);
-			job_dual.setNumReduceTasks(1);
-			job_dual.setOutputKeyClass(IntWritable.class);
-			job_dual.setOutputValueClass(Text.class);
-			
-			// Parallel Block
-			job_dual.waitForCompletion(true);
-			
-			// Update probability vector in dual step
-			pUpdate(k);
-			
-			// Store parameters in a log file for this iteration
-			logParameter(k);
-			pOutput(k);
-		}
 	}
 }
