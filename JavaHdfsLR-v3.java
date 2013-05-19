@@ -7,7 +7,7 @@ import java.io.*;
 import java.util.*;
 
 public class JavaHdfsLR {
-	static int D = 16428;
+	static int D = 3231961;
 	static Random rand = new Random(42);
 	
 	static class Xvector implements Serializable {
@@ -116,21 +116,21 @@ public class JavaHdfsLR {
 		return res;
 	}
 
-	public static void printWeights(double[] a, double b) {
+	public static void printWeights(double[] a, double b) throws Exception {
 		File fout=new File("output-model.txt");
 		FileWriter writer = new FileWriter(fout);
 		BufferedWriter bw= new BufferedWriter(writer);
 		for (int i=0;i<D;i++) {
-			bw.write(a[i]+"\r\n");
+			bw.write(a[i]+"\n");
 			bw.flush();
 		}
-		bw.write(b+"\r\n");
+		bw.write(b+"\n");
 		bw.flush();
 		bw.close();
 		writer.close();
 	}
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws Exception {
 		if (args.length < 3) {
 			System.err.println("Usage: JavaHdfsLR <master> <file> <iters>");
 			System.exit(1);
@@ -148,7 +148,7 @@ public class JavaHdfsLR {
 
 		for (int i = 1; i <= ITERATIONS; i++) {
 			System.out.println("On iteration " + i);
-			Datapoint gradient = points.map(new ComputeGradient(w)).reduce(new VectorSum());
+			DataPoint gradient = points.map(new ComputeGradient(w)).reduce(new VectorSum());
 			int num=gradient.x.x_index.size();
 			for (int j = 0; j < num; j++) {
 				int index=gradient.x.x_index.elementAt(j);
@@ -157,7 +157,7 @@ public class JavaHdfsLR {
 			b -= gradient.y;
 		}
 
-		System.out.print("Final w: ");
+		System.out.println("All Iterations Completed!");
 		printWeights(w,b);
 		System.exit(0);
 	}
