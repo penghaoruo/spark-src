@@ -145,10 +145,9 @@ class DualMap extends Function<DataPoint, Xvector> {
 	public int jt;
 	public double eta;
 	
-	public DualMap(double[] weights, int D, int N, int jt, double eta, double b) {
+	public DualMap(double[] weights, int D, int jt, double eta, double b) {
 		this.weights = weights;
 		this.D = D;
-		this.N = N;
 		this.jt = jt;
 		this.eta = eta;
 		this.b = b;
@@ -166,7 +165,7 @@ class DualMap extends Function<DataPoint, Xvector> {
 		double value = 0;
 		int flag = point.x.x_index.indexOf(jt);
 		if (flag != -1) value = point.x.x_value.elementAt(flag);
-		double sigma = value / w[jt] + b * point.y;
+		double sigma = value / weights[jt] + b * point.y;
 		double sigma_hat = clip(sigma, 1.0/eta);
 		double res = 1 - eta * sigma_hat + eta * sigma_hat * eta * sigma_hat;
 		
@@ -198,7 +197,7 @@ public class JavaHdfsLR {
 	static String fname=null;
 	static int N = 0;
 	static int D = 0;
-	static int ITERATIONS = 0;
+	static int T = 0;
 	static double[] w = null;
 	static double b = 0;
 	static double[] p = null;
@@ -228,7 +227,7 @@ public class JavaHdfsLR {
 		fname = args[1]; // hadoop_data (with line index)
 		N = Integer.parseInt(args[2]);
 		D = Integer.parseInt(args[3]);
-		ITERATIONS = Integer.parseInt(args[4]);
+		T = Integer.parseInt(args[4]);
 		w = new double[D];
 		for (int i = 0; i < D; i++)
 			w[i] = 0;
@@ -242,6 +241,8 @@ public class JavaHdfsLR {
 		res = Math.sqrt(res);
 		for (int i = 0; i < N; i++)
 			p[i] = p[i] / res;
+		eta=0.15;
+		jt = 0;
 	}
 
 	public static int fSample() {
@@ -249,7 +250,7 @@ public class JavaHdfsLR {
 		Random rnd=new Random();
 		double r=rnd.nextDouble();
 		double sum=0;
-		for (int i=0;i<d;i++) {
+		for (int i=0;i<D;i++) {
 			sum=sum+w[i]*w[i];
 			if (r<sum) break;
 			res=res+1;
@@ -266,7 +267,7 @@ public class JavaHdfsLR {
 		JavaRDD<DataPoint> points = lines.map(new ParsePoint()).cache();
 		
 		// Iterations
-		for (int i = 1; i <= ITERATIONS; i++) {
+		for (int i = 1; i <= T; i++) {
 			System.out.println("On iteration " + i);
 			
 			// Primal Part 
@@ -290,7 +291,7 @@ public class JavaHdfsLR {
 			jt = fSample();
 			
 			// Dual Part 
-			Xvector pmod = points.map(new DualMap(w, D, N, jt, eta, b)).reduce(new DualReduce());
+			Xvector pmod = points.map(new DualMap(w, D, jt, eta, b)).reduce(new DualReduce());
 			// p Update
 			int num = pmod.x_index.size();
 			if (num != N) System.out.println("Dual-Part Dimension Error!");
