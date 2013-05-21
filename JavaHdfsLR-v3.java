@@ -95,6 +95,8 @@ public class JavaHdfsLR {
 		
 		public DataPoint call(DataPoint p) {
 			DataPoint gradient = new DataPoint(new Xvector(new Vector<Integer>(),new Vector<Double>()), 0);
+			gradient.x.x_index.clear();
+			gradient.x.x_value.clear();
 			Xvector curx=p.x;
 			int num=curx.x_index.size();
 			double tmp_value = (1 / (1 + Math.exp(-p.y * dot(weights, curx))) - 1) * p.y;

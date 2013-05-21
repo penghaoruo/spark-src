@@ -6,112 +6,68 @@ import spark.api.java.function.Function2;
 import java.io.*;
 import java.util.*;
 
-public class JavaHdfsLR {
-	static JavaSparkContext sc=null;
-	static String fname=null;
-	static int N = 0;
-	static int D = 0;
-	static int ITERATIONS = 0;
-	static double[] w = null;
-	static double b = 0;
-	static Random rand = new Random(42);
+class Xvector implements Serializable {
+	Vector<Integer> x_index;
+	Vector<Double> x_value;
+	public Xvector(Vector<Integer> x_index, Vector<Double> x_value) {
+		this.x_index = x_index;
+		this.x_value = x_value;
+	}
+}
+
+class DataPoint implements Serializable {
+	int line_num;
+	Xvector x;
+	double y;
+	public DataPoint(int line_num, Xvector x, double y) {
+		this.line_num = line_num;
+		this.x = x;
+		this.y = y;
+	}
+}
+
+class ParsePoint extends Function<String, DataPoint> {
+	Vector<Integer> x_index=new Vector<Integer>();
+	Vector<Double> x_value=new Vector<Double>();
+	public DataPoint call(String line) {
+		x_index.clear();
+		x_value.clear();
+		StringTokenizer itr = new StringTokenizer(line, " ");
+		int line_num = Integer.parseInt(itr.nextToken());
+		double y = Double.parseDouble(itr.nextToken());
+		String tmp=itr.nextToken();
+		while (tmp.contains(":")) {
+			String[] strs=tmp.split(":");
+			x_index.addElement(Integer.parseInt(strs[0]));
+			x_value.addElement(Double.parseDouble(strs[1]));
+			if (itr.hasMoreTokens()) tmp=itr.nextToken();
+			else break;
+		}
+		return new DataPoint(line_num, new Xvector(x_index,x_value),y);
+	}
+}
+
+class PrimalMap extends Function<DataPoint, DataPoint> {
+	double[] weights;
+	double[] p;
+	int N;
+	int T;
+	double b;
 	
-	static class Xvector implements Serializable {
-		Vector<Integer> x_index;
-		Vector<Double> x_value;
-		public Xvector(Vector<Integer> x_index, Vector<Double> x_value) {
-			this.x_index = x_index;
-	    	this.x_value = x_value;
-		}
+	public PrimalMap(double[] weights, double[] p, int N, int T, double b) {
+		this.weights = weights;
+		this.p = p;
+		this.N = N;
+		this.T = T;
+		this.b = b;
 	}
 	
-	static class DataPoint implements Serializable {
-		Xvector x;
-	    double y;
-	    public DataPoint(Xvector x, double y) {
-	    	this.x = x;
-	    	this.y = y;
-	    }
+	public double funcg(double tmp) {
+		double res=0;
+		res=1.0/(double)(1+Math.exp(tmp));
+		return res;
 	}
-
-	static class ParsePoint extends Function<String, DataPoint> {
-		Vector<Integer> x_index=new Vector<Integer>();
-		Vector<Double> x_value=new Vector<Double>();
-		public DataPoint call(String line) {
-			x_index.clear();
-			x_value.clear();
-			StringTokenizer itr = new StringTokenizer(line, " ");
-			double y = Double.parseDouble(itr.nextToken());
-			String tmp=itr.nextToken();
-			while (tmp.contains(":")) {
-				String[] strs=tmp.split(":");
-				x_index.addElement(Integer.parseInt(strs[0]));
-				x_value.addElement(Double.parseDouble(strs[1]));
-				if (itr.hasMoreTokens()) tmp=itr.nextToken();
-				else break;
-			}
-			return new DataPoint(new Xvector(x_index,x_value),y);
-		}
-	}
-
-	static class VectorSum extends Function2<DataPoint, DataPoint, DataPoint> {
-		public DataPoint call(DataPoint a, DataPoint b) {
-			DataPoint result = new DataPoint(new Xvector(new Vector<Integer>(),new Vector<Double>()), 0);
-			result.x.x_index.clear();
-			result.x.x_value.clear();
-			int num1=a.x.x_index.size();
-			int num2=b.x.x_index.size();
-			int p1=0;
-			int p2=0;
-			while (p1<num1||p2<num2) {
-				int index1,index2;
-				if (p1==num1) index1=Integer.MAX_VALUE;
-				else index1=a.x.x_index.elementAt(p1);
-				if (p2==num2) index2=Integer.MAX_VALUE;
-				else index2=b.x.x_index.elementAt(p2);
-				if (p1>=num1&&p2>=num2) break;
-				if (index1<index2) {
-					result.x.x_index.addElement(index1);
-					result.x.x_value.addElement(a.x.x_value.elementAt(p1));
-					p1++;
-				}
-				if (index1==index2) {
-					result.x.x_index.addElement(index1);
-					result.x.x_value.addElement(a.x.x_value.elementAt(p1)+b.x.x_value.elementAt(p2));
-					p1++;
-					p2++;
-				}
-				if (index1>index2) {
-					result.x.x_index.addElement(index2);
-					result.x.x_value.addElement(b.x.x_value.elementAt(p2));
-					p2++;
-				}
-			}
-			result.y=a.y+b.y;
-			return result;
-		}
-	}
-
-	static class ComputeGradient extends Function<DataPoint, DataPoint> {
-		double[] weights;
-		
-		public ComputeGradient(double[] weights) {
-			this.weights = weights;
-		}
-		
-		public DataPoint call(DataPoint p) {
-			DataPoint gradient = new DataPoint(new Xvector(new Vector<Integer>(),new Vector<Double>()), 0);
-			Xvector curx=p.x;
-			int num=curx.x_index.size();
-			double tmp_value = (1 / (1 + Math.exp(-p.y * dot(weights, curx))) - 1) * p.y;
-			gradient.x.x_index=curx.x_index;
-			for (int i = 0; i < num; i++)
-				gradient.x.x_value.addElement(tmp_value*curx.x_value.elementAt(i));
-			gradient.y=tmp_value;
-			return gradient;
-		}
-	}
-
+	
 	public static double dot(double[] a, Xvector x) {
 		double res = 0;
 		int num=x.x_index.size();
@@ -121,16 +77,143 @@ public class JavaHdfsLR {
 		}
 		return res;
 	}
+	
+	public DataPoint call(DataPoint point) {
+		Random rnd = new Random();
+		int r = 0; //r=1;//r=rnd.nextInt();
+		int line_num = point.line_num;
+		Xvector curx = point.x;
+		double coef = 0;
+		if (p[line_num-1] > (double)(r) / (double)(N))
+			coef = y * funcg(y * (dot(weights, curx) + b));
+		coef = coef * p[line_num-1];
+		
+		DataPoint gradient = new DataPoint(0, new Xvector(new Vector<Integer>(),new Vector<Double>()), 0);
+		gradient.x.x_index.clear();
+		gradient.x.x_value.clear();
+		int num=curx.x_index.size();
+		gradient.x.x_index=curx.x_index;
+		for (int i = 0; i < num; i++)
+			gradient.x.x_value.addElement(coef * curx.x_value.elementAt(i) / Math.sqrt(2 * T));
+		gradient.y = coef / Math.sqrt(2 * T);
+		return gradient;
+	}
+}
 
-	public static void printWeights(double[] a, double b) {
+class PrimalReduce extends Function2<DataPoint, DataPoint, DataPoint> {
+	public DataPoint call(DataPoint a, DataPoint b) {
+		DataPoint result = new DataPoint(0, new Xvector(new Vector<Integer>(),new Vector<Double>()), 0);
+		result.x.x_index.clear();
+		result.x.x_value.clear();
+		int num1=a.x.x_index.size();
+		int num2=b.x.x_index.size();
+		int p1=0;
+		int p2=0;
+		while (p1<num1||p2<num2) {
+			int index1,index2;
+			if (p1==num1) index1=Integer.MAX_VALUE;
+			else index1=a.x.x_index.elementAt(p1);
+			if (p2==num2) index2=Integer.MAX_VALUE;
+			else index2=b.x.x_index.elementAt(p2);
+			if (p1>=num1&&p2>=num2) break;
+			if (index1<index2) {
+				result.x.x_index.addElement(index1);
+				result.x.x_value.addElement(a.x.x_value.elementAt(p1));
+				p1++;
+			}
+			if (index1==index2) {
+				result.x.x_index.addElement(index1);
+				result.x.x_value.addElement(a.x.x_value.elementAt(p1)+b.x.x_value.elementAt(p2));
+				p1++;
+				p2++;
+			}
+			if (index1>index2) {
+				result.x.x_index.addElement(index2);
+				result.x.x_value.addElement(b.x.x_value.elementAt(p2));
+				p2++;
+			}
+		}
+		result.y=a.y+b.y;
+		return result;
+	}
+}
+
+class DualMap extends Function<DataPoint, Xvector> {
+	public int D;
+	public double weights[];
+	public double b;	
+	public int jt;
+	public double eta;
+	
+	public DualMap(double[] weights, int D, int N, int jt, double eta, double b) {
+		this.weights = weights;
+		this.D = D;
+		this.N = N;
+		this.jt = jt;
+		this.eta = eta;
+		this.b = b;
+	}
+	
+	public double clip(double a, double b) {
+		return Math.max(Math.min(a,b),(-1)*b);
+	}
+	
+	public Xvector call(DataPoint point) {
+		Xvector mypair = new Xvector(new Vector<Integer>(),new Vector<Double>());
+		mypair.x_index.clear();
+		mypair.x_value.clear();
+
+		double value = 0;
+		int flag = point.x.x_index.indexOf(jt);
+		if (flag != -1) value = point.x.x_value.elementAt(flag);
+		double sigma = value / w[jt] + b * point.y;
+		double sigma_hat = clip(sigma, 1.0/eta);
+		double res = 1 - eta * sigma_hat + eta * sigma_hat * eta * sigma_hat;
+		
+		mypair.x_index.addElement(point.line_num);
+		mypair.x_value.addElement(res);
+		return mypair;
+	}
+}
+
+class DualReduce extends Function2<Xvector, Xvector, Xvector> {
+	public Xvector call(Xvector a, Xvector b) {
+		Xvector result = new Xvector(new Vector<Integer>(),new Vector<Double>());
+		result.x_index.clear();
+		result.x_value.clear();
+		for (int i=0;i<a.x_index.size();i++) {
+			result.x_index.addElement(a.x_index.elementAt(i));
+			result.x_value.addElement(a.x_value.elementAt(i));
+		}
+		for (int i=0;i<b.x_index.size();i++) {
+			result.x_index.addElement(b.x_index.elementAt(i));
+			result.x_value.addElement(b.x_value.elementAt(i));
+		}
+		return result;
+	}
+}
+
+public class JavaHdfsLR {
+	static JavaSparkContext sc=null;
+	static String fname=null;
+	static int N = 0;
+	static int D = 0;
+	static int ITERATIONS = 0;
+	static double[] w = null;
+	static double b = 0;
+	static double[] p = null;
+	static int jt;
+	static double eta;
+
+	public static void printWeights(double[] a, double b) throws Exception {
 		File fout=new File("output-model.txt");
 		FileWriter writer = new FileWriter(fout);
 		BufferedWriter bw= new BufferedWriter(writer);
 		for (int i=0;i<D;i++) {
-			bw.write(a[i]+"\r\n");
+			bw.write(a[i]+"\n");
 			bw.flush();
 		}
-		bw.write(b+"\r\n");
+		bw.write(b+"\n");
 		bw.flush();
 		bw.close();
 		writer.close();
@@ -142,17 +225,39 @@ public class JavaHdfsLR {
 			System.exit(1);
 		}
 		sc = new JavaSparkContext(args[0], "JavaHdfsLR", System.getenv("SPARK_HOME"), System.getenv("SPARK_EXAMPLES_JAR"));
-		fname = args[1];
+		fname = args[1]; // hadoop_data (with line index)
 		N = Integer.parseInt(args[2]);
 		D = Integer.parseInt(args[3]);
 		ITERATIONS = Integer.parseInt(args[4]);
 		w = new double[D];
-		b = 0;
 		for (int i = 0; i < D; i++)
 			w[i] = 0;
+		b = 0;
+		p = new double[N];
+		for (int i = 0; i < N; i++)
+			p[i] = 1;
+		double res = 0;
+		for (int i = 0; i < N; i++)
+			res = res + p[i] * p[i];
+		res = Math.sqrt(res);
+		for (int i = 0; i < N; i++)
+			p[i] = p[i] / res;
 	}
 
-	public static void main(String[] args) {
+	public static int fSample() {
+		int res=0;
+		Random rnd=new Random();
+		double r=rnd.nextDouble();
+		double sum=0;
+		for (int i=0;i<d;i++) {
+			sum=sum+w[i]*w[i];
+			if (r<sum) break;
+			res=res+1;
+		}
+		return res;
+	}
+	
+	public static void main(String[] args) throws Exception {
 		// Parameter initialization
 		pInitial(args);
 		
@@ -163,77 +268,47 @@ public class JavaHdfsLR {
 		// Iterations
 		for (int i = 1; i <= ITERATIONS; i++) {
 			System.out.println("On iteration " + i);
-			Datapoint gradient = points.map(new ComputeGradient(w)).reduce(new VectorSum());
+			
+			// Primal Part 
+			DataPoint gradient = points.map(new PrimalMap(w, p, N, T, b)).reduce(new PrimalReduce());
+			
+			// w Update
 			int num=gradient.x.x_index.size();
 			for (int j = 0; j < num; j++) {
 				int index=gradient.x.x_index.elementAt(j);
-				w[index-1] -= gradient.x.x_value.elementAt(j);
+				w[index-1] += gradient.x.x_value.elementAt(j);
 			}
+			double res = 0;
+			for (int j = 0; j < D; j++)
+				res = res + w[j] * w[j];
+			res = Math.sqrt(res);
+			for (int j = 0; j < D; j++)
+				w[j] = w[j] / res;
 			b -= gradient.y;
+			
+			// Sample in feature space
+			jt = fSample();
+			
+			// Dual Part 
+			Xvector pmod = points.map(new DualMap(w, D, N, jt, eta, b)).reduce(new DualReduce());
+			// p Update
+			int num = pmod.x_index.size();
+			if (num != N) System.out.println("Dual-Part Dimension Error!");
+			for (int j = 0; j < num; j++) {
+				int index = pmod.x_index.elementAt(j);
+				double value = pmod.x_value.elementAt(j);
+				p[index-1] *= value;
+			}
+			double res = 0;
+			for (int j = 0; j < N; j++)
+				res = res + p[j] * p[j];
+			res = Math.sqrt(res);
+			for (int j = 0; j < N; j++)
+				p[j] = p[j] / res;
 		}
 
-		System.out.print("Final w: ");
+		System.out.println("All Iterations Completed!");
 		printWeights(w,b);
 		System.exit(0);
-		
-			
-			// Set up for the first Map-Reduce job 
-			Job job_primal=new Job(conf_primal, "SublinearPrimal");
-			job_primal.setJarByClass(SublinearLogisticLtwo.class);
-			FileInputFormat.addInputPath(job_primal,new Path(args[0]));
-			FileOutputFormat.setOutputPath(job_primal,tempDir1);             
-			job_primal.setMapperClass(PrimalMap.class);
-			job_primal.setCombinerClass(PrimalReduce.class);
-			job_primal.setReducerClass(PrimalReduce.class);
-			job_primal.setNumReduceTasks(30);
-			job_primal.setOutputKeyClass(Text.class);
-			job_primal.setOutputValueClass(Text.class);
-			
-			// Parallel Block
-			job_primal.waitForCompletion(true);
-			
-			// Update learning variables in primal step
-			wUpdate(k);
-			
-			// Get configuration of the second Map-Reduce job
-			Configuration conf_dual=new Configuration();
-			
-			// Set output path in hdfs for the second Map-Reduce job 
-			Path tempDir2 = new Path("sublinear/tmp/dual"+(new Integer(k)).toString());
-			
-			// Pass parameters for the second Map-Reduce job through configuration 
-			conf_dual.setInt("d", d);
-			conf_dual.setInt("n", n);
-			conf_dual.setInt("jt", jt);
-			conf_dual.setFloat("b", (float)b);
-			conf_dual.setFloat("eta", (float)eta);
-			
-			// Store w[] in hdfs file 
-			pass_throgh_hdfs(1);
-			
-			// Set previous hdfs files in cache
-			DistributedCache.addCacheFile(new URI("sublinear/tmp/paraw"), conf_dual);
-			DistributedCache.addCacheFile(new URI("sublinear/tmp/parakexi"), conf_dual);
-			
-			// Set up for the second Map-Reduce job 
-			Job job_dual=new Job(conf_dual, "SublinearDual");
-			job_dual.setJarByClass(SublinearLogisticLtwo.class);
-			FileInputFormat.addInputPath(job_dual,new Path(args[0]));
-			FileOutputFormat.setOutputPath(job_dual,tempDir2);             
-			job_dual.setMapperClass(DualMap.class);
-			job_dual.setNumReduceTasks(1);
-			job_dual.setOutputKeyClass(IntWritable.class);
-			job_dual.setOutputValueClass(Text.class);
-			
-			// Parallel Block
-			job_dual.waitForCompletion(true);
-			
-			// Update probability vector in dual step
-			pUpdate(k);
-			
-			// Store parameters in a log file for this iteration
-			logParameter(k);
-			pOutput(k);
-		}
 	}
 }
