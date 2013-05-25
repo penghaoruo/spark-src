@@ -7,7 +7,7 @@ import java.io.*;
 import java.util.*;
 
 public class JavaHdfsLR {
-	static int D = 3231961;
+	static int D = 5000;
 	static Random rand = new Random(42);
 	
 	static class Xvector implements Serializable {
@@ -29,9 +29,9 @@ public class JavaHdfsLR {
 	}
 
 	static class ParsePoint extends Function<String, DataPoint> {
-		Vector<Integer> x_index=new Vector<Integer>();
-		Vector<Double> x_value=new Vector<Double>();
 		public DataPoint call(String line) {
+			Vector<Integer> x_index=new Vector<Integer>();
+			Vector<Double> x_value=new Vector<Double>();
 			x_index.clear();
 			x_value.clear();
 			StringTokenizer itr = new StringTokenizer(line, " ");
@@ -53,6 +53,24 @@ public class JavaHdfsLR {
 			DataPoint result = new DataPoint(new Xvector(new Vector<Integer>(),new Vector<Double>()), 0);
 			result.x.x_index.clear();
 			result.x.x_value.clear();
+			
+			/*
+			int num1=a.x.x_index.size();
+			int num2=b.x.x_index.size();
+			for (int i=0;i<num1;i++) {
+				result.x.x_index.addElement(a.x.x_index.elementAt(i));
+				result.x.x_value.addElement(a.x.x_value.elementAt(i));
+			}
+			for (int i=0;i<num2;i++) {
+				int p=result.x.x_index.indexOf(b.x.x_index.elementAt(i));
+				if (p==-1) {
+					result.x.x_index.addElement(b.x.x_index.elementAt(i));
+					result.x.x_value.addElement(b.x.x_value.elementAt(i));
+				}
+				else result.x.x_value.set(p,result.x.x_value.elementAt(p) + b.x.x_value.elementAt(i));
+			}
+			*/
+			
 			int num1=a.x.x_index.size();
 			int num2=b.x.x_index.size();
 			int p1=0;
@@ -81,6 +99,7 @@ public class JavaHdfsLR {
 					p2++;
 				}
 			}
+			
 			result.y=a.y+b.y;
 			return result;
 		}
@@ -88,18 +107,24 @@ public class JavaHdfsLR {
 
 	static class ComputeGradient extends Function<DataPoint, DataPoint> {
 		double[] weights;
+		double b;
+		int t;
 		
-		public ComputeGradient(double[] weights) {
+		public ComputeGradient(double[] weights,double b,int t) {
 			this.weights = weights;
+			this.b = b;
+			this.t = t;
 		}
 		
-		public DataPoint call(DataPoint p) {
+		public DataPoint call(DataPoint p) throws Exception {
 			DataPoint gradient = new DataPoint(new Xvector(new Vector<Integer>(),new Vector<Double>()), 0);
 			gradient.x.x_index.clear();
 			gradient.x.x_value.clear();
 			Xvector curx=p.x;
 			int num=curx.x_index.size();
-			double tmp_value = (1 / (1 + Math.exp(-p.y * dot(weights, curx))) - 1) * p.y;
+			double tmp_value = (1 / (1 + Math.exp(-p.y * (dot(weights, curx)+b))) - 1) * p.y;
+			//for (int i = 0; i < num; i++)
+			//	gradient.x.x_index.addElement(curx.x_index.elementAt(i));
 			gradient.x.x_index=curx.x_index;
 			for (int i = 0; i < num; i++)
 				gradient.x.x_value.addElement(tmp_value*curx.x_value.elementAt(i));
@@ -145,18 +170,34 @@ public class JavaHdfsLR {
 
 		double[] w = new double[D];
 		for (int i = 0; i < D; i++)
-			w[i] = 2 * rand.nextDouble() - 1;
+			w[i] = 0;
 		double b=0;
 
 		for (int i = 1; i <= ITERATIONS; i++) {
+			System.out.println(w[0]);
+			System.out.println(w[1]);
+			System.out.println(b);
 			System.out.println("On iteration " + i);
-			DataPoint gradient = points.map(new ComputeGradient(w)).reduce(new VectorSum());
+			DataPoint gradient = points.map(new ComputeGradient(w,b,i)).reduce(new VectorSum());
 			int num=gradient.x.x_index.size();
 			for (int j = 0; j < num; j++) {
 				int index=gradient.x.x_index.elementAt(j);
 				w[index-1] -= gradient.x.x_value.elementAt(j);
 			}
 			b -= gradient.y;
+			/*
+			double res = 0;
+			for (int j = 0; j < D; j++)
+				res = res + w[j] * w[j];
+			//res = res + b * b;
+			res = Math.sqrt(res);
+			
+			*/
+			/*
+			for (int j = 0; j < D; j++)
+				w[j] = w[j] / 200;
+			b = b / 200;
+			*/
 		}
 
 		System.out.println("All Iterations Completed!");

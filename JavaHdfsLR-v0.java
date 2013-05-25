@@ -13,7 +13,7 @@ import java.util.Random;
  */
 public class JavaHdfsLR {
 
-  static int D = 10;   // Number of dimensions
+  static int D = 2;   // Number of dimensions
   static Random rand = new Random(42);
 
   static class DataPoint implements Serializable {
@@ -33,7 +33,7 @@ public class JavaHdfsLR {
       double[] x = new double[D];
       int i = 0;
       while (i < D) {
-        x[i] = Double.parseDouble(tok.nextToken());
+        x[i] = Double.parseDouble(tok.nextToken().split(":")[1]);
         i += 1;
       }
       return new DataPoint(x, y);
@@ -60,7 +60,7 @@ public class JavaHdfsLR {
     public double[] call(DataPoint p) {
       double[] gradient = new double[D];
       for (int i = 0; i < D; i++) {
-        double dot = dot(weights, p.x);
+        double dot = dot(weights, p.x) - weights[0] - weights[1];
         gradient[i] = (1 / (1 + Math.exp(-p.y * dot)) - 1) * p.y * p.x[i];
       }
       return gradient;
@@ -103,7 +103,8 @@ public class JavaHdfsLR {
 
     for (int i = 1; i <= ITERATIONS; i++) {
       System.out.println("On iteration " + i);
-
+	  System.out.println(w[0]);
+	  System.out.println(w[1]);
       double[] gradient = points.map(
         new ComputeGradient(w)
       ).reduce(new VectorSum());
